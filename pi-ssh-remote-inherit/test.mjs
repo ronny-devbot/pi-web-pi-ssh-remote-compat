@@ -40,6 +40,11 @@ assert.deepEqual(
   localState,
   "latest marker wins (exit after connect)",
 );
+// pi-web's live spawn path clones the in-memory value: undefined properties
+// (JSON.stringify drops them from the on-disk copy) must not survive the mirror.
+const remoteWithUndefinedPort = { ...remoteState, port: undefined };
+const m2 = computeMirror([{ type: "custom", customType: "pi-ssh-remote-state", data: remoteWithUndefinedPort }]);
+assert.ok(m2 && !("port" in m2.value), "undefined port is stripped from the mirrored value");
 
 // -- computeAdoption -------------------------------------------------------
 assert.deepEqual(

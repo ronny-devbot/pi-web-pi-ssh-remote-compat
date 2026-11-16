@@ -93,10 +93,14 @@ export function computeMirror(
 ): { version: 1; namespace: string; value: unknown; inherit: true } | undefined {
   const marker = latestCustom(branch, [SSH_REMOTE_STATE_TYPE, SSH_LOCAL_STATE_TYPE]);
   if (!marker || !isObj(marker.data)) return undefined;
-  if (new TextEncoder().encode(JSON.stringify(marker.data)).length > MAX_STATE_BYTES) {
+  // Round-trip through JSON: pi-web's live-session spawn path clones the
+  // in-memory value, where e.g. `port: undefined` (dropped from the on-disk
+  // copy) would trip its "only JSON values" check.
+  const value: unknown = JSON.parse(JSON.stringify(marker.data));
+  if (new TextEncoder().encode(JSON.stringify(value)).length > MAX_STATE_BYTES) {
     return undefined;
   }
-  return { version: 1, namespace: NAMESPACE, value: marker.data, inherit: true };
+  return { version: 1, namespace: NAMESPACE, value, inherit: true };
 }
 
 /**
