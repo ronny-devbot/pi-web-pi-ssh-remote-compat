@@ -9,6 +9,8 @@ import {
   latestCustom,
   latestSessionState,
   checkPackageOrder,
+  adoptionReport,
+  countMalformedSessionStates,
 } from "./index.ts";
 
 const remoteState = {
@@ -83,6 +85,30 @@ assert.deepEqual(
   { customType: "pi-ssh-remote-state", data: remoteState },
   "branch order (not id) decides the latest",
 );
+
+// -- adoptionReport (fail closed: seeded remote never ends up silently local) --
+const ORDER = 'loaded after pi-ssh-remote ("npm:@99percentpeople/pi-ssh-remote")';
+assert.deepEqual(adoptionReport([seed(remoteState)], undefined), [], "normal adoption -> no report (ssh-remote fails closed itself)");
+assert.deepEqual(adoptionReport([seed(localState)], undefined), [], "seeded local -> legitimately local");
+assert.deepEqual(adoptionReport([remoteEntry], undefined), [], "no seed -> local, no report");
+let r = adoptionReport([seed(remoteState)], ORDER);
+assert.equal(r.length, 1, "order problem + seeded remote -> one report");
+assert.equal(r[0].level, "error");
+assert.match(r[0].message, /LOCAL files/);
+assert.match(r[0].message, /dev1/);
+assert.deepEqual(adoptionReport([seed(localState)], ORDER), [], "order problem + seeded local -> no adoption report (handler adds generic warning)");
+r = adoptionReport([seed(remoteState), localEntry], undefined);
+assert.equal(r.length, 1, "seeded remote + local marker -> mismatch report");
+assert.equal(r[0].level, "error");
+assert.match(r[0].message, /marked local/);
+r = adoptionReport([seed(remoteState), remoteEntry], undefined);
+assert.deepEqual(r, [], "seeded remote + equal remote marker -> no report (already adopted)");
+const malformed = { type: "custom", customType: "pi-web.session-state", data: { version: 9, namespace: "ssh-remote", value: remoteState, inherit: true } };
+r = adoptionReport([malformed], undefined);
+assert.equal(r.length, 1, "only malformed entries -> report");
+assert.match(r[0].message, /malformed/);
+assert.deepEqual(adoptionReport([malformed, seed(remoteState)], undefined), [], "malformed + valid -> valid wins, no report");
+assert.equal(countMalformedSessionStates([{ type: "custom", customType: "pi-web.session-state", data: { version: 9, namespace: "mcp", value: {}, inherit: true } }]), 0, "foreign namespace not counted");
 
 // -- checkPackageOrder -------------------------------------------------------
 const home = mkdtempSync(join(tmpdir(), "inherit-test-"));

@@ -19,7 +19,13 @@
  * Ordering requirement: this package must load BEFORE pi-ssh-remote. Load
  * order is the project .pi/settings.json packages (array order) followed by
  * the user ~/.pi/agent/settings.json packages (array order). The extension
- * verifies this at session_start and warns when it is violated.
+ * verifies this at session_start and reports violations.
+ *
+ * Fail closed: a session seeded with a remote state must never run silently
+ * on local files. Every path where the remote cannot be active (package
+ * order wrong, session marked local, malformed state) produces a loud error
+ * notification naming the cause. When adoption succeeds, pi-ssh-remote
+ * itself fails closed (its tools throw) if the connection cannot be made.
  */
 import type {
   ExtensionAPI,
@@ -77,7 +83,7 @@ export function latestSessionState(
   return undefined;
 }
 
-function isRemoteState(value: unknown): boolean {
+export function isRemoteState(value: unknown): boolean {
   return isObj(value)
     && typeof value["target"] === "string"
     && value["target"].length > 0;
@@ -162,6 +168,78 @@ export function checkPackageOrder(cwd: string, homeDir: string = homedir()): str
   );
 }
 
+/**
+ * Count malformed pi-web.session-state entries in our namespace (present but
+ * failing the version/inherit validation). These are skipped by
+ * latestSessionState; if they are the only state present, inheritance would
+ * silently not happen — report it instead.
+ */
+export function countMalformedSessionStates(entries: unknown[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (!isObj(entry) || entry["type"] !== "custom") continue;
+    if (entry["customType"] !== SESSION_STATE_TYPE) continue;
+    const data = entry["data"];
+    if (!isObj(data) || data["namespace"] !== NAMESPACE) continue;
+    if (data["version"] !== 1 || typeof data["inherit"] !== "boolean") count++;
+  }
+  return count;
+}
+
+/**
+ * Fail-closed reporting for session_start. Returns the notifications the
+ * session must surface: a seeded remote state that ends up local is never
+ * silent. Empty when the session is legitimately local (local or no seeded
+ * state) or correctly remote (adoption happened; pi-ssh-remote fails closed
+ * itself if the connection then fails).
+ */
+export function adoptionReport(
+  branch: unknown[],
+  orderProblem: string | undefined,
+): Array<{ level: "error" | "warning"; message: string }> {
+  const out: Array<{ level: "error" | "warning"; message: string }> = [];
+  const seeded = latestSessionState(branch);
+  const remote = isRemoteState(seeded ? seeded.value : undefined);
+  if (remote && seeded) {
+    const target = (seeded.value as Record<string, unknown>)["target"] as string;
+    if (orderProblem) {
+      // The state entry is appended after pi-ssh-remote resolved this start,
+      // so this run stays local. A later resume of the same session adopts
+      // correctly (the entry is then already in the file); only the first
+      // start of a freshly spawned session loses the race.
+      out.push({
+        level: "error",
+        message:
+          `inherited SSH workspace "${target}" was NOT applied: this package ${orderProblem}. ` +
+          `This session is running on LOCAL files. Fix the package order and restart the session, ` +
+          `or connect explicitly with /ssh-connect (and /ssh-exit to go back).`,
+      });
+    } else if (computeAdoption(branch).length === 0) {
+      // Skipped because the session already carries its own marker. If that
+      // marker is "local" while the last inherited state was remote, surface it.
+      const latest = latestCustom(branch, [SSH_REMOTE_STATE_TYPE, SSH_LOCAL_STATE_TYPE]);
+      if (latest && latest.customType === SSH_LOCAL_STATE_TYPE) {
+        out.push({
+          level: "error",
+          message:
+            `session is marked local, but the last inherited SSH state was remote ("${target}"). ` +
+            `It is running on LOCAL files — use /ssh-connect if that is not intended.`,
+        });
+      }
+    }
+  }
+  const malformed = countMalformedSessionStates(branch);
+  if (malformed > 0 && !seeded) {
+    out.push({
+      level: "error",
+      message:
+        `${malformed} malformed "ssh-remote" session-state entr${malformed === 1 ? "y" : "ies"} ` +
+        `found; inheritance was skipped and this session is local. Update pi-ssh-remote-inherit.`,
+    });
+  }
+  return out;
+}
+
 export default function sshRemoteInheritExtension(pi: ExtensionAPI): void {
   let manager: SessionManager | undefined;
   let lastMirrorJson = "";
@@ -177,14 +255,19 @@ export default function sshRemoteInheritExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx: ExtensionContext) => {
     manager = ctx.sessionManager;
+    const branch = ctx.sessionManager.getBranch();
     const orderProblem = checkPackageOrder(ctx.cwd);
-    if (orderProblem) {
-      ctx.ui.notify(`[pi-ssh-remote-inherit] ${orderProblem}`, "warning");
-    }
-    for (const entry of computeAdoption(ctx.sessionManager.getBranch())) {
+    for (const entry of computeAdoption(branch)) {
       pi.appendEntry(entry.customType, entry.data);
     }
-    mirror(ctx.sessionManager.getBranch());
+    const reports = adoptionReport(branch, orderProblem);
+    if (reports.length === 0 && orderProblem) {
+      reports.push({ level: "warning", message: orderProblem });
+    }
+    for (const report of reports) {
+      ctx.ui.notify(`[pi-ssh-remote-inherit] ${report.message}`, report.level);
+    }
+    mirror(branch);
   });
 
   // The event payload alone is incomplete (no port/home/shell), so the

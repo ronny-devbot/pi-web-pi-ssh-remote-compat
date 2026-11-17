@@ -27,6 +27,18 @@ The extension checks this itself at `session_start` and shows a warning naming t
 - Inheritance reflects the spawner's state **at spawn time** (that is what pi-web's mechanism does for all session state).
 - One namespace (`ssh-remote`), latest entry wins; state is capped at pi-web's 64 KB session-state limit.
 
+## Fail closed
+
+Following pi-ssh-remote's principle — *fails closed when an SSH workspace is unavailable instead of silently using local files* — a session that should be remote never runs silently on local files:
+
+| Situation | Behavior |
+|---|---|
+| Adoption succeeds, connection fails | pi-ssh-remote's tools **throw** (it never falls back to local) |
+| Package order wrong (first start of a spawned session) | **Error** notification: "running on LOCAL files" + exact fix. A later resume of the same session adopts correctly (the state entry is then already in the file); only the first start loses the race |
+| Session marked local, last inherited state remote | **Error** notification with `/ssh-connect` guidance |
+| Malformed inherited state (version skew) | **Error** notification: update pi-ssh-remote-inherit |
+| Local seeded / nothing seeded | Local is legitimate — no notification |
+
 ## Test
 
 ```sh
