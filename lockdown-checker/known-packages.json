@@ -1,0 +1,15 @@
+{
+  "_comment": "Verdicts for installed pi packages (entries of ~/.pi/agent/settings.json 'packages'). Prefixes: safe: / warn: / problem: — anything not listed here is reported as UNREVIEWED (warning). 'pi-web-bundled' applies to any path under pi-web's dist/pi-packages/ (ships with pi-web, tracked by the guard's drift check). Keep this file current: a new install is a new surface until it has a verdict here.",
+  "packages": {
+    "npm:@99percentpeople/pi-ssh-remote": "safe: the extension under lockdown (remote routing, fail-closed on transport loss)",
+    "git:github.com/ronny-devbot/pi-ssh-remote-inherit": "safe: glue for child-session inheritance; must stay listed BEFORE pi-ssh-remote",
+    "pi-web-bundled": "safe (class): pi-web's bundled pi-packages (relays, mcp-manager, session-naming, workflows, scheduled-tasks); mcp-manager is dormant without an mcp.json",
+    "npm:pi-mono-web-search": "problem: web_read can GET any public host = exfiltration channel for anything the model can read",
+    "npm:pi-compaction-model": "safe: settings/provider only, no model-facing tools",
+    "npm:@branch187/pi-temperature": "safe: no model-facing tools",
+    "git:github.com/DietrichGebert/ponytail": "safe: skills only, no tools; its ponytail-mcp subpackage is dormant without an mcp.json",
+    "git:github.com/ronny-devbot/clone-session": "warn: clone_session/clone_subsession — same trust as spawn (children inherit state); remove if you don't use it",
+    "git:github.com/ronny-devbot/notify-ntfy": "warn: model can push arbitrary text to your own ntfy",
+    "npm:@99percentpeople/pi-background-tasks": "problem (if installed): bg tools fall back to LOCAL execution in local sessions"
+  }
+}
