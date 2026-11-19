@@ -18,9 +18,11 @@ node <path-to>/check-lockdown.mjs
 2. **pi-web config** — effective values incl. defaults: `sessionMessages` (cross-session
    steering hole), `spawnSessions`/`subsessions` (safe while children inherit state),
    `relays` (human-gated), `askUser`, `workspace-tasks`.
-3. **Pi agent settings** — `ssh-remote.aiControlTools` (model state-shedding), required
-   packages present (ssh-remote + glue), per-package verdicts (below), `defaultTools`
-   (`powershell` is never remote-routed), `mcp.json` (global + every trusted project).
+3. **Pi agent settings** — `ssh-remote.aiControlTools` (model state-shedding),
+   `pi-ssh-remote` present, the glue effectively **active** (entry resolves to a real
+   directory, entry point present, listed before `pi-ssh-remote` = load order),
+   per-package verdicts (below), `defaultTools` (`powershell` is never remote-routed),
+   `mcp.json` (global + every trusted project).
 4. **Tool shadowing (drift check)** — re-derives the name-collision set from the code
    installed *right now*: which built-in tools the installed pi-web wraps locally, whether
    the guard's filter covers them, and whether any other installed package registers a
@@ -43,6 +45,12 @@ One entry per package id (as listed in `~/.pi/agent/settings.json` `packages`):
 **Anything not listed is reported as `UNREVIEWED` (warning).** Reviewing a new install
 means deciding one of the three verdicts and adding a line here — that is the maintenance
 contract: a new package is a new surface until it has a verdict.
+
+Limits of the glue "active" check: whether pi *loaded* the extension in a live session is
+not observable from a static script. The glue's own fail-closed reports cover the case
+where it loaded but a seeded session ends up local; the directory/entry/order checks cover
+the silent "never loaded" case (clone deleted, path typo, order swap) as far as static
+analysis can.
 
 ## Test overrides
 

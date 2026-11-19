@@ -48,6 +48,14 @@ const readJson = (p) => {
   catch { return { value: undefined, text: undefined, error: true }; }
 };
 
+// Resolve a packages[] entry to its on-disk directory (npm:/git:/absolute/relative).
+const pkgDir = (id) => {
+  const x = String(id);
+  if (x.startsWith("npm:")) return join(HOME, ".pi", "agent", "npm", "node_modules", x.slice(4));
+  if (x.startsWith("git:")) return join(HOME, ".pi", "agent", "git", x.slice(4));
+  return x.startsWith("/") ? x : resolve(AGENT_DIR, x);
+};
+
 console.log(`SSH-session lockdown check — ${new Date().toISOString()}`);
 
 // ---------------------------------------------------------------- the guard
@@ -169,9 +177,30 @@ console.log("Pi agent settings:");
   // Required packages (the lockdown depends on them).
   if (has("@99percentpeople/pi-ssh-remote")) ok("package present: @99percentpeople/pi-ssh-remote (required)");
   else problem("package missing: @99percentpeople/pi-ssh-remote", "pi install npm:@99percentpeople/pi-ssh-remote");
-  if (has("pi-ssh-remote-inherit")) ok("package present: pi-ssh-remote-inherit glue (required for child-session inheritance)");
-  else problem("package missing: pi-ssh-remote-inherit glue — children of connected sessions would NOT inherit remote state (local access via spawned sessions)",
-    "point packages at the glue folder of the deployment (e.g. /home/ronny/.pi-web-pi-ssh-remote-compat/pi-ssh-remote-inherit), listed BEFORE pi-ssh-remote");
+  {
+    const glueEntries = packages.filter((p) => String(p).includes("pi-ssh-remote-inherit"));
+    if (!glueEntries.length)
+      problem("package missing: pi-ssh-remote-inherit glue — children of connected sessions would NOT inherit remote state (local access via spawned sessions)",
+        "point packages at the glue folder of the deployment (e.g. /home/ronny/.pi-web-pi-ssh-remote-compat/pi-ssh-remote-inherit), listed BEFORE pi-ssh-remote");
+    else {
+      const glueDir = pkgDir(glueEntries[0]);
+      if (!existsSync(glueDir))
+        problem(`glue entry points to a MISSING directory: ${glueDir} — the glue would not load; children of connected sessions would start LOCAL instead of remote`,
+          "restore the deployment clone (git clone github.com/ronny-devbot/pi-web-pi-ssh-remote-compat ~/.pi-web-pi-ssh-remote-compat) or fix the path in settings.json");
+      else if (!existsSync(join(glueDir, "index.ts")) && !existsSync(join(glueDir, "index.js")))
+        problem(`glue entry point missing in ${glueDir} (no index.ts/index.js) — the glue would not load`,
+          "restore the pi-ssh-remote-inherit folder from the pi-web-pi-ssh-remote-compat repo");
+      else {
+        const gi = packages.findIndex((p) => String(p).includes("pi-ssh-remote-inherit"));
+        const si = packages.findIndex((p) => String(p).includes("@99percentpeople/pi-ssh-remote"));
+        if (si === -1 || gi < si)
+          ok(`glue resolvable (${glueDir}), entry point present, listed before pi-ssh-remote (load order OK)`);
+        else
+          problem("glue is listed AFTER pi-ssh-remote in packages — it loses the session_start race; children of connected sessions would start LOCAL instead of remote",
+            "move the pi-ssh-remote-inherit entry BEFORE the @99percentpeople/pi-ssh-remote entry in settings.json");
+      }
+    }
+  }
 
   // Every other package: verdict from the allowlist; unlisted = UNREVIEWED.
   const { value: allow, error: allowErr } = readJson(KNOWN_PACKAGES);
@@ -283,12 +312,6 @@ console.log("Tool shadowing (drift check):");
   // 3) other installed packages registering built-in tool names (best effort:
   //    literal name:"..." registrations only; minified/dynamic names are missed)
   const { value: settings } = readJson(AGENT_SETTINGS);
-  const pkgDir = (id) => {
-    const x = String(id);
-    if (x.startsWith("npm:")) return join(HOME, ".pi", "agent", "npm", "node_modules", x.slice(4));
-    if (x.startsWith("git:")) return join(HOME, ".pi", "agent", "git", x.slice(4));
-    return x.startsWith("/") ? x : resolve(AGENT_DIR, x);
-  };
   for (const id of settings?.packages ?? []) {
     const x = String(id);
     if (x.includes("pi-ssh-remote")) continue; // required pair: ssh-remote's own registrations are the authorized remote ones
