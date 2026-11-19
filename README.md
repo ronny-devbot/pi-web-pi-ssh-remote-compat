@@ -29,3 +29,8 @@ Experimental reorganization. Sources, both kept intact until this layout is appr
 - `lockdown-checker/` ← that repo's last commit (decomposed out of it)
 - `pi-ssh-remote-inherit/` ← `github.com/ronny-devbot/pi-ssh-remote-inherit` (full commit
   history, replayed under the subdirectory)
+
+Layout principle: **each top-level folder is a self-contained mini-repo** — own README,
+own `.gitignore` where the component produces local artifacts (the checker produces none),
+so any folder can be copied or cloned on its own. The root deliberately has no
+`.gitignore` (nothing lives at the root except this README).
