@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// ~/.pi-web-edit-guard/check-lockdown.mjs
+// ~/.pi-web-pi-ssh-remote-compat/lockdown-checker/check-lockdown.mjs
 //
 // Checks that SSH (remote-work) sessions are locked down, using the SETTINGS
 // CURRENT ON EXECUTION. Read-only: it changes nothing.
 //
-//   node ~/.pi-web-edit-guard/check-lockdown.mjs
+//   node ~/.pi-web-pi-ssh-remote-compat/lockdown-checker/check-lockdown.mjs
 //   exit 0 = clean, 1 = problems found, 2 = warnings only
 //
 // Threat model: compromised LLM (user is trusted). Scope: a session that is
@@ -15,14 +15,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 
 const HOME = os.homedir();
-const GUARD_DIR = join(HOME, ".pi-web-edit-guard");
+const GUARD_DIR = join(HOME, ".pi-web-pi-ssh-remote-compat", "pi-web-edit-guard");
 const GUARD = join(GUARD_DIR, "index.mjs");
 const BAK = join(GUARD_DIR, "piSdk.js.bak");
 const SELFTEST = join(GUARD_DIR, "SELFTEST");
-const KNOWN_PACKAGES = process.env["CHECK_LOCKDOWN_KNOWN_PACKAGES"] ?? join(GUARD_DIR, "known-packages.json");
+const KNOWN_PACKAGES = process.env["CHECK_LOCKDOWN_KNOWN_PACKAGES"] ?? join(dirname(fileURLToPath(import.meta.url)), "known-packages.json");
 const PIWEB_CONFIG = process.env["CHECK_LOCKDOWN_PIWEB_CONFIG"] ?? join(HOME, ".config", "pi-web", "config.json");
 const AGENT_DIR = join(HOME, ".pi", "agent");
 const AGENT_SETTINGS = process.env["CHECK_LOCKDOWN_AGENT_SETTINGS"] ?? join(AGENT_DIR, "settings.json");
@@ -167,7 +168,7 @@ console.log("Pi agent settings:");
   else problem("package missing: @99percentpeople/pi-ssh-remote", "pi install npm:@99percentpeople/pi-ssh-remote");
   if (has("pi-ssh-remote-inherit")) ok("package present: pi-ssh-remote-inherit glue (required for child-session inheritance)");
   else problem("package missing: pi-ssh-remote-inherit glue — children of connected sessions would NOT inherit remote state (local access via spawned sessions)",
-    "pi install git:github.com/ronny-devbot/pi-ssh-remote-inherit (and keep it listed BEFORE pi-ssh-remote in packages)");
+    "point packages at the glue folder of the deployment (e.g. /home/ronny/.pi-web-pi-ssh-remote-compat/pi-ssh-remote-inherit), listed BEFORE pi-ssh-remote");
 
   // Every other package: verdict from the allowlist; unlisted = UNREVIEWED.
   const { value: allow, error: allowErr } = readJson(KNOWN_PACKAGES);
