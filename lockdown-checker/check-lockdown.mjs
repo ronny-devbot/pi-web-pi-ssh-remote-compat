@@ -12,9 +12,9 @@
 // trusted-model zone by design (see NOTES at the end) and are not counted as
 // problems.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 
@@ -212,6 +212,80 @@ console.log("Pi agent settings:");
     .filter(existsSync);
   if (localSkills.length)
     note(`project-local skills (trusted-user territory, not flagged): ${localSkills.join(", ")}`);
+}
+
+// ------------------------------------------- tool shadowing (drift check)
+console.log("Tool shadowing (drift check):");
+{
+  // The SDK registry gives session custom tools (pi-web's) top precedence over
+  // extension-registered tools over built-ins. ssh-remote makes the built-in
+  // file/shell tools remote by registering remote COPIES of them. So any local
+  // tool registered under a built-in name (pi-web wrapper OR other package)
+  // would silently shadow the remote version. This section re-derives the
+  // collision set from the code installed RIGHT NOW, on every run.
+  const nvmRoot = dirname(dirname(process.execPath));
+  const sdkToolsDir = join(nvmRoot, "lib", "node_modules", "@earendil-works/pi-coding-agent", "dist", "core", "tools");
+  let builtinNames = [];
+  try { builtinNames = readdirSync(sdkToolsDir).filter((f) => /^[a-z-]+\.js$/.test(f)).map((f) => f.replace(".js", "")); } catch {}
+  if (!builtinNames.length)
+    warn("could not enumerate the SDK's built-in tools - shadowing drift check degraded");
+  const builtin = new Set(builtinNames);
+  const factoryFor = (n) => `create${n[0].toUpperCase()}${n.slice(1)}ToolDefinition`;
+
+  // 1) does the installed pi-web wrap any built-in locally? (calls to the SDK's
+  //    built-in factories anywhere in pi-web's dist)
+  const pwDist = join(nvmRoot, "lib", "node_modules", "@jmfederico/pi-web", "dist");
+  let wrapped = new Set();
+  if (existsSync(pwDist)) {
+    const files = readdirSync(pwDist, { recursive: true }).filter((f) => String(f).endsWith(".js"));
+    for (const f of files) {
+      const src = readFileSync(join(pwDist, f), "utf8");
+      for (const n of builtinNames) if (src.includes(factoryFor(n) + "(")) wrapped.add(n);
+    }
+  } else warn("pi-web dist not found for this node - cannot check pi-web tool wrapping");
+
+  // 2) the guard's protected set (single source of truth: the guard file)
+  const guardSrc = existsSync(GUARD) ? readFileSync(GUARD, "utf8") : "";
+  const m = guardSrc.match(/\[([^\]]+)\]\.includes\(t\.name\)/);
+  const protectedSet = new Set(m ? (m[1].match(/"[a-z_]+"/g) ?? []).map((x) => x.slice(1, -1)) : []);
+  if (!m)
+    problem("could not parse the guard's protected-tool list from " + GUARD,
+      "the guard must keep its [\"name\", ...].includes(t.name) filter literal");
+  else {
+    for (const n of [...wrapped].sort())
+      protectedSet.has(n)
+        ? ok(`pi-web wraps '${n}' locally; guard filter covers it`)
+        : problem(`pi-web now wraps built-in '${n}' locally but the guard's filter does NOT cover it - a local '${n}' would shadow the remote '${n}' in SSH sessions`,
+          `add \"${n}\" to the filter list in ${GUARD}`);
+    if (!wrapped.size) note("no built-in wrapping detected in pi-web (only edit is known today)");
+  }
+
+  // 3) other installed packages registering built-in tool names (best effort:
+  //    literal name:"..." registrations only; minified/dynamic names are missed)
+  const { value: settings } = readJson(AGENT_SETTINGS);
+  const pkgDir = (id) => {
+    const x = String(id);
+    if (x.startsWith("npm:")) return join(HOME, ".pi", "agent", "npm", "node_modules", x.slice(4));
+    if (x.startsWith("git:")) return join(HOME, ".pi", "agent", "git", x.slice(4));
+    return x.startsWith("/") ? x : resolve(AGENT_DIR, x);
+  };
+  for (const id of settings?.packages ?? []) {
+    const x = String(id);
+    if (x.includes("pi-ssh-remote")) continue; // required pair: ssh-remote's own registrations are the authorized remote ones
+    const dir = pkgDir(id);
+    if (!existsSync(dir)) continue;
+    const found = new Set();
+    try {
+      for (const f of readdirSync(dir, { recursive: true }).filter((f) => String(f).endsWith(".js"))) {
+        const src = readFileSync(join(dir, f), "utf8");
+        for (const mm of src.matchAll(/registerTool\(\{\s*name:\s*"([a-z_]+)"/g)) if (builtin.has(mm[1])) found.add(mm[1]);
+      }
+    } catch {}
+    if (found.size)
+      problem(`package ${id} registers built-in tool name(s) ${[...found].join(", ")} (LOCAL) - in SSH sessions these shadow the remote versions`,
+        `remove the tool registration or the package (verdict belongs in ${KNOWN_PACKAGES})`);
+  }
+  note("shadowing scan is best-effort static analysis: tools registered with dynamic/minified names are not detected");
 }
 
 // ------------------------------------------------------------------- optional

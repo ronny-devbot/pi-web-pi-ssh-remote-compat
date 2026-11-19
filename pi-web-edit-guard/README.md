@@ -1,8 +1,10 @@
 # pi-web-edit-guard
 
-A ~90-line Node preload that stops **pi-web's local `edit` wrapper from shadowing
-`@99percentpeople/pi-ssh-remote`'s remote `edit`** — a hole where the model's `edit`
-tool resolved to a **local file editor while the session was "remote"**.
+A ~90-line Node preload that stops **pi-web's local wrappers of built-in tools from
+shadowing `@99percentpeople/pi-ssh-remote`'s remote versions** — a hole where the
+model's `edit` tool resolved to a **local file editor while the session was "remote"**.
+The filter covers *all* built-in tool names, so a future pi-web wrapper (e.g. a local
+`write`) is blocked without code changes.
 
 No dependencies. One file. One line in `~/.profile`. Fails closed.
 
@@ -23,9 +25,10 @@ edit  (tool):   edit /tmp/probe.txt            # -> "Error code: ENOENT"  (looke
 bash  (remote): cat /tmp/probe.txt             # unchanged — nothing was edited
 ```
 
-`read`, `write`, `bash`, `grep`, `find`, `ls` are unaffected (pi-web only wraps `edit`).
-The fix belongs in pi-web (the wrapper should not override an extension-provided tool
-of the same name, or should compute the preview against the active implementation) —
+`read`, `write`, `bash`, `grep`, `find`, `ls` are unaffected **today** (pi-web only
+wraps `edit`); the filter is generalized to all built-in names so a future wrapper is
+caught. The fix belongs in pi-web (the wrapper should not override an extension-provided
+tool of the same name, or should compute the preview against the active implementation) —
 this guard is the local, version-pinning stopgap until upstream fixes it.
 
 ## How it works
@@ -34,7 +37,8 @@ The preload (`index.mjs`, loaded via `NODE_OPTIONS=--import`) runs **synchronous
 before the main module loads** and patches pi-web's 5-line SDK facade
 (`dist/piSdk.js`) **in place**: the session-creation exports
 (`createAgentSession`, `createAgentSessionFromServices`, `createAgentSessionRuntime`)
-are wrapped to filter `name === "edit"` out of `customTools`.
+are wrapped to filter all built-in-named entries out of `customTools` (the list lives
+in `index.mjs`).
 
 State machine at process start:
 
@@ -42,7 +46,7 @@ State machine at process start:
 |---|---|
 | not found for this node | silent, process continues (guard idle) |
 | already patched (marker `__g_sdk`) | silent, process continues (steady state) |
-| pristine + canary matches | **patch in place**; pristine kept at `$GUARD_DIR/piSdk.js.bak`; banner `ACTIVE: patched …` on stderr |
+| pristine + canary matches | **patch in place**; pristine kept next to `index.mjs` (`piSdk.js.bak`; `EDIT_GUARD_DIR` overrides); banner `ACTIVE: patched …` on stderr |
 | present but drifted (canary fails) | **throw → process refuses to start (FAIL-CLOSED)** |
 | `SELFTEST` file present | **throw → FAIL-CLOSED** (proves the alarm works) |
 
@@ -73,16 +77,16 @@ Design notes (why this shape):
 ### 1. Install the guard
 
 ```sh
-mkdir -p ~/.pi-web-edit-guard
-cp index.mjs ~/.pi-web-edit-guard/     # or: git clone <this repo> ~/.pi-web-edit-guard
+# deployed as the monorepo clone (this folder is a top-level dir of it):
+git clone github.com/ronny-devbot/pi-web-pi-ssh-remote-compat ~/.pi-web-pi-ssh-remote-compat
 ```
 
-The guard locates the facade at
+The guard is **self-locating**: backup and self-test files live next to `index.mjs`
+(`EDIT_GUARD_DIR` overrides). It locates the facade at
 `<node prefix>/lib/node_modules/@jmfederico/pi-web/dist/piSdk.js` (nvm layout) for
-whatever node the pi-web services run on. If your pi-web lives elsewhere, set
-`EDIT_GUARD_DIR` for the backup/self-test files and extend the `candidates` list in
-`index.mjs` with your facade path (or point `EDIT_GUARD_FACADE` at it — that
-override is intended for testing).
+whatever node the pi-web services run on; if your pi-web lives elsewhere, extend the
+`candidates` list in `index.mjs` (or point `EDIT_GUARD_FACADE` at it — that override is
+intended for testing).
 
 ### 2. Add the carrier line to `~/.profile`
 
@@ -90,8 +94,8 @@ override is intended for testing).
 `~/.bash_profile`/`~/.bash_login`, put it there instead (login shells read that first).
 
 ```sh
-# --- pi-web edit-guard (do not remove while using pi-web + ssh-remote) ---
-export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--import /home/<you>/.pi-web-edit-guard/index.mjs"
+# --- pi-web/pi-ssh-remote compat guard (do not remove while using pi-web + ssh-remote) ---
+export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--import /home/<you>/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/index.mjs"
 ```
 
 This is inherited by every node process started from a login shell — including the
@@ -128,10 +132,10 @@ grep -c "__g_sdk" ~/.nvm/.../lib/node_modules/@jmfederico/pi-web/dist/piSdk.js  
 ## Self-test (prove the alarm before trusting it)
 
 ```sh
-touch ~/.pi-web-edit-guard/SELFTEST
+touch ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/SELFTEST
 systemctl --user restart pi-web-sessiond     # must END UP FAILED with the FAIL-CLOSED error
 journalctl --user -u pi-web-sessiond -n 20   # -> [edit-guard] FAIL-CLOSED: self-test requested …
-rm ~/.pi-web-edit-guard/SELFTEST
+rm ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/SELFTEST
 systemctl --user restart pi-web-sessiond     # healthy again
 ```
 
@@ -151,13 +155,16 @@ exercise the drift path without touching the real file.
 
 ```sh
 # 1. Restore the pristine facade (the patch is on disk until an npm update replaces it)
-cp ~/.pi-web-edit-guard/piSdk.js.bak <pi-web>/dist/piSdk.js
+cp ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/piSdk.js.bak <pi-web>/dist/piSdk.js
 # 2. Remove the export line from ~/.profile
 # 3. Restart both pi-web services
 ```
 
 ## Scope — what this does NOT protect against
 
+- **Other packages registering built-in tool names** (a local `bash`/`read`/… from any
+  package would also shadow the remote versions): detected by the `lockdown-checker`'s
+  tool-shadowing scan, not by this guard.
 - **Local sessions**: a model in a local session has local tools by definition; no
   settings-level fix exists without also killing remote tools (shared tool names).
 - **`send_session_message`**: set `"sessionMessages": false` in

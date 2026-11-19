@@ -21,8 +21,12 @@ node <path-to>/check-lockdown.mjs
 3. **Pi agent settings** — `ssh-remote.aiControlTools` (model state-shedding), required
    packages present (ssh-remote + glue), per-package verdicts (below), `defaultTools`
    (`powershell` is never remote-routed), `mcp.json` (global + every trusted project).
-4. **Optional defense-in-depth** — sandbox state.
-5. **Accepted by design** — printed so they never surprise you later (local-zone tools,
+4. **Tool shadowing (drift check)** — re-derives the name-collision set from the code
+   installed *right now*: which built-in tools the installed pi-web wraps locally, whether
+   the guard's filter covers them, and whether any other installed package registers a
+   built-in name (best-effort: literal registrations only).
+5. **Optional defense-in-depth** — sandbox state.
+6. **Accepted by design** — printed so they never surprise you later (local-zone tools,
    skill-directory reads).
 
 Every problem line carries the exact fix (file + change).
