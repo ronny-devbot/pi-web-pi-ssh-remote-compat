@@ -1,4 +1,4 @@
-# pi-web-edit-guard
+# tool-shadow-guard
 
 A ~90-line Node preload that stops **pi-web's local wrappers of built-in tools from
 shadowing `@99percentpeople/pi-ssh-remote`'s remote versions** — a hole where the
@@ -95,7 +95,7 @@ intended for testing).
 
 ```sh
 # --- pi-web/pi-ssh-remote compat guard (do not remove while using pi-web + ssh-remote) ---
-export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--import /home/<you>/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/index.mjs"
+export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--import /home/<you>/.pi-web-pi-ssh-remote-compat/tool-shadow-guard/index.mjs"
 ```
 
 This is inherited by every node process started from a login shell — including the
@@ -132,10 +132,10 @@ grep -c "__g_sdk" ~/.nvm/.../lib/node_modules/@jmfederico/pi-web/dist/piSdk.js  
 ## Self-test (prove the alarm before trusting it)
 
 ```sh
-touch ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/SELFTEST
+touch ~/.pi-web-pi-ssh-remote-compat/tool-shadow-guard/SELFTEST
 systemctl --user restart pi-web-sessiond     # must END UP FAILED with the FAIL-CLOSED error
-journalctl --user -u pi-web-sessiond -n 20   # -> [edit-guard] FAIL-CLOSED: self-test requested …
-rm ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/SELFTEST
+journalctl --user -u pi-web-sessiond -n 20   # -> [tool-shadow-guard] FAIL-CLOSED: self-test requested …
+rm ~/.pi-web-pi-ssh-remote-compat/tool-shadow-guard/SELFTEST
 systemctl --user restart pi-web-sessiond     # healthy again
 ```
 
@@ -155,7 +155,7 @@ exercise the drift path without touching the real file.
 
 ```sh
 # 1. Restore the pristine facade (the patch is on disk until an npm update replaces it)
-cp ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/piSdk.js.bak <pi-web>/dist/piSdk.js
+cp ~/.pi-web-pi-ssh-remote-compat/tool-shadow-guard/piSdk.js.bak <pi-web>/dist/piSdk.js
 # 2. Remove the export line from ~/.profile
 # 3. Restart both pi-web services
 ```

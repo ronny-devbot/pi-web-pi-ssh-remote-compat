@@ -1,4 +1,4 @@
-// ~/.pi-web-pi-ssh-remote-compat/pi-web-edit-guard/index.mjs (self-locating)
+// ~/.pi-web-pi-ssh-remote-compat/tool-shadow-guard/index.mjs (self-locating)
 //
 // Preload (NODE_OPTIONS="--import .../index.mjs", see ~/.profile) that stops
 // pi-web's local wrappers of built-in tools from shadowing
@@ -43,13 +43,13 @@ const GUARD_DIR = process.env["EDIT_GUARD_DIR"] ?? dirname(fileURLToPath(import.
 const SELFTEST = join(GUARD_DIR, "SELFTEST");
 const BAK = join(GUARD_DIR, "piSdk.js.bak");
 const DEBUG = process.env["EDIT_GUARD_DEBUG"] === "1";
-const log = (...a) => { if (DEBUG) console.error("[edit-guard]", ...a); };
+const log = (...a) => { if (DEBUG) console.error("[tool-shadow-guard]", ...a); };
 
 const MARKER = "__g_sdk"; // proves our patch is already in place
 
 function failClosed(why) {
   throw new Error(
-    `[edit-guard] FAIL-CLOSED: ${why}. Refusing to start so an unpatched ` +
+    `[tool-shadow-guard] FAIL-CLOSED: ${why}. Refusing to start so an unpatched ` +
     `pi-web (local wrappers shadowing remote tools) never serves silently. ` +
     `Re-verify the guard against the installed pi-web, or remove it only if ` +
     `you explicitly accept the local-tool shadowing.`
@@ -90,7 +90,7 @@ if (!facade) {
 
     // --- patch in place -------------------------------------------------------
     const patched = src.replace("const sdk = await loadPiSdk();", `const ${MARKER} = await loadPiSdk();
-// >>> edit-guard: filter built-in-named entries out of pi-web's customTools so no
+// >>> tool-shadow-guard: filter built-in-named entries out of pi-web's customTools so no
 // >>> local wrapper can shadow an extension-registered remote version (ssh-remote
 // >>> registers remote copies of the built-in file/shell tools). The list is the
 // >>> SDK's built-in tool names - extend it if the SDK's set changes. Do not remove
@@ -104,12 +104,12 @@ const sdk = {
   createAgentSessionFromServices: (o) => ${MARKER}.createAgentSessionFromServices(__g_filter(o)),
   createAgentSessionRuntime: (r, o) => ${MARKER}.createAgentSessionRuntime(r, __g_filter(o)),
 };
-// <<< edit-guard`);
+// <<< tool-shadow-guard`);
     if (patched === src)
       failClosed("transform reported success but changed nothing");
 
     writeFileSync(BAK, src); // pristine copy, for rollback
     writeFileSync(facade, patched);
-    console.error(`[edit-guard] ACTIVE: patched ${facade} (pristine kept at ${BAK})`);
+    console.error(`[tool-shadow-guard] ACTIVE: patched ${facade} (pristine kept at ${BAK})`);
   }
 }

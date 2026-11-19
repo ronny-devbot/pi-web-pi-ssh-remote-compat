@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 
 const HOME = os.homedir();
-const GUARD_DIR = join(HOME, ".pi-web-pi-ssh-remote-compat", "pi-web-edit-guard");
+const GUARD_DIR = join(HOME, ".pi-web-pi-ssh-remote-compat", "tool-shadow-guard");
 const GUARD = join(GUARD_DIR, "index.mjs");
 const BAK = join(GUARD_DIR, "piSdk.js.bak");
 const SELFTEST = join(GUARD_DIR, "SELFTEST");
@@ -51,7 +51,7 @@ const readJson = (p) => {
 console.log(`SSH-session lockdown check — ${new Date().toISOString()}`);
 
 // ---------------------------------------------------------------- the guard
-console.log("Guard (edit-shadowing fix):");
+console.log("Guard (tool-shadowing fix):");
 if (!existsSync(GUARD))
   problem("guard file missing", `restore ${GUARD} (see its git history / this directory's docs)`);
 else {
@@ -103,6 +103,9 @@ else {
       const environ = readFileSync(`/proc/${mpid}/environ`, "utf8");
       if (environ.includes(`NODE_OPTIONS=--import ${GUARD}`))
         ok("daemon process has the guard loaded (NODE_OPTIONS verified in /proc environ)");
+      else if (environ.includes("NODE_OPTIONS="))
+        problem("daemon's NODE_OPTIONS points at a different guard path (stale after a move/rename) — the loaded guard is not the deployed one",
+          "systemctl --user restart pi-web-sessiond");
       else
         problem("daemon is running WITHOUT the guard (no NODE_OPTIONS in its environment) — it was started before the profile line was added",
           "systemctl --user restart pi-web-sessiond");
@@ -258,6 +261,23 @@ console.log("Tool shadowing (drift check):");
         : problem(`pi-web now wraps built-in '${n}' locally but the guard's filter does NOT cover it - a local '${n}' would shadow the remote '${n}' in SSH sessions`,
           `add \"${n}\" to the filter list in ${GUARD}`);
     if (!wrapped.size) note("no built-in wrapping detected in pi-web (only edit is known today)");
+  }
+
+  // 2b) the deployed facade patch must implement the guard's FULL list. A stale
+  //     patch (an older, narrower filter) only self-heals when pi-web replaces
+  //     the facade, so flag it explicitly.
+  const facadeNow = FACADE_CANDIDATES.find(existsSync);
+  if (facadeNow && m) {
+    const facSrc = readFileSync(facadeNow, "utf8");
+    const fm = facSrc.match(/\[([^\]]+)\]\.includes\(t\.name\)/);
+    if (fm) {
+      const facadeSet = new Set((fm[1].match(/"[a-z_]+"/g) ?? []).map((x) => x.slice(1, -1)));
+      const missing = [...protectedSet].filter((x) => !facadeSet.has(x));
+      missing.length
+        ? problem(`facade patch is STALE: it covers ${[...facadeSet].join(", ")} but the guard's list is ${[...protectedSet].join(", ")} - a ${missing.join("/")} wrapper would get through`,
+          `cp ${BAK} ${facadeNow} and restart pi-web-sessiond so the guard re-patches`)
+        : ok(`facade patch matches the guard's filter (${[...facadeSet].join(", ")})`);
+    }
   }
 
   // 3) other installed packages registering built-in tool names (best effort:

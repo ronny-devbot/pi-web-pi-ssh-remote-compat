@@ -11,7 +11,7 @@ node <path-to>/check-lockdown.mjs
 
 ## What it checks
 
-1. **Guard wiring** — `pi-web-edit-guard/index.mjs` present; `~/.profile` `NODE_OPTIONS`
+1. **Guard wiring** — `tool-shadow-guard/index.mjs` present; `~/.profile` `NODE_OPTIONS`
    carrier (incl. `~/.bash_profile` shadow detection); facade patch state (patched /
    pristine-but-compatible / drifted→will-fail-closed); `.bak` rollback copy; no stray
    `SELFTEST`; daemon active **and** guard actually in its `/proc` environ.

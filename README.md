@@ -5,7 +5,7 @@ SSH (remote-work) sessions locked down from local file access.
 
 ## Layout
 
-- `pi-web-edit-guard/` — the core fix. A small Node preload (wired via
+- `tool-shadow-guard/` — the core fix. A small Node preload (wired via
   `~/.profile` `NODE_OPTIONS`) that stops pi-web's local `edit` wrapper from
   shadowing ssh-remote's remote `edit`. Fails closed: if it cannot be applied
   (pi-web drift), the daemon refuses to start. See its README for bug, design,
@@ -26,7 +26,7 @@ SSH (remote-work) sessions locked down from local file access.
 **This is the live deployment.** The clone at `~/.pi-web-pi-ssh-remote-compat` is used
 directly — nothing is installed elsewhere:
 
-- `pi-web-edit-guard/index.mjs` — preloaded via the `NODE_OPTIONS` line in `~/.profile`
+- `tool-shadow-guard/index.mjs` — preloaded via the `NODE_OPTIONS` line in `~/.profile`
   (the pi-web services start through a login shell)
 - `pi-ssh-remote-inherit/` — referenced by local path in `~/.pi/agent/settings.json`
   `packages` (before `pi-ssh-remote`)
