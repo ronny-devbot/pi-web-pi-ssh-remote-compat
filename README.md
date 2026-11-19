@@ -14,9 +14,18 @@ SSH (remote-work) sessions locked down from local file access.
   lockdown using the settings current on execution (guard wiring, pi-web config,
   agent settings, packages, MCP). Exit 0/1/2 = clean / problems / warnings.
   `known-packages.json` holds per-package verdicts; unlisted packages are flagged
-  unreviewed.
+  unreviewed. See its README.
+- `pi-ssh-remote-inherit/` — the glue. Mirrors `pi-ssh-remote`'s session state into
+  pi-web's inheritable session state so sessions spawned from a connected session inherit
+  the remote (children of local sessions stay local). Must be listed BEFORE
+  `@99percentpeople/pi-ssh-remote` in `packages` to win the `session_start` race, and it
+  reports loudly (fail-closed) when a seeded remote session ends up local.
 
 ## Status
 
-Experimental reorganization, decomposed from `github.com/ronny-devbot/pi-web-edit-guard`
-(kept intact until this layout is approved).
+Experimental reorganization. Sources, both kept intact until this layout is approved:
+
+- `pi-web-edit-guard/` ← `github.com/ronny-devbot/pi-web-edit-guard` (its guard commit)
+- `lockdown-checker/` ← that repo's last commit (decomposed out of it)
+- `pi-ssh-remote-inherit/` ← `github.com/ronny-devbot/pi-ssh-remote-inherit` (full commit
+  history, replayed under the subdirectory)
