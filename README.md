@@ -23,12 +23,18 @@ SSH (remote-work) sessions locked down from local file access.
 
 ## Status
 
-Experimental reorganization. Sources, both kept intact until this layout is approved:
+**This is the live deployment.** The clone at `~/.pi-web-pi-ssh-remote-compat` is used
+directly — nothing is installed elsewhere:
 
-- `pi-web-edit-guard/` ← `github.com/ronny-devbot/pi-web-edit-guard` (its guard commit)
-- `lockdown-checker/` ← that repo's last commit (decomposed out of it)
-- `pi-ssh-remote-inherit/` ← `github.com/ronny-devbot/pi-ssh-remote-inherit` (full commit
-  history, replayed under the subdirectory)
+- `pi-web-edit-guard/index.mjs` — preloaded via the `NODE_OPTIONS` line in `~/.profile`
+  (the pi-web services start through a login shell)
+- `pi-ssh-remote-inherit/` — referenced by local path in `~/.pi/agent/settings.json`
+  `packages` (before `pi-ssh-remote`)
+- `lockdown-checker/check-lockdown.mjs` — run from its folder; keep `known-packages.json`
+  current as packages come and go
+
+Updates: `git pull` in the deployment clone. The guard takes effect at the next
+`pi-web-sessiond` restart; the glue at the next pi process start.
 
 Layout principle: **each top-level folder is a self-contained mini-repo** — own README,
 own `.gitignore` where the component produces local artifacts (the checker produces none),
