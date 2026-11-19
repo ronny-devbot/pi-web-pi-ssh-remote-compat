@@ -12,7 +12,7 @@
 // trusted-model zone by design (see NOTES at the end) and are not counted as
 // problems.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -120,6 +120,37 @@ else {
     }
   } catch {
     warn("could not query systemd state (no user bus in this shell?) — daemon status unverified");
+  }
+}
+
+// ------------------------------------------- in-memory staleness (drift)
+console.log("In-memory staleness (daemon start vs. code on disk):");
+{
+  // A running daemon executes the code it loaded at START. An npm update that is
+  // not followed by a restart leaves OLD code live - invisible to every other
+  // check above (they read the disk). Compare the daemon's start time with the
+  // mtime of the code it runs.
+  let startSec = 0;
+  try {
+    const mpid = execSync("systemctl --user show -p MainPID --value pi-web-sessiond", { encoding: "utf8" }).trim();
+    startSec = parseInt(execSync(`stat -c %Y /proc/${mpid}`, { encoding: "utf8" }).trim(), 10);
+  } catch {}
+  if (!startSec)
+    warn("could not determine daemon start time - staleness check skipped");
+  else {
+    const nvmRoot = dirname(dirname(process.execPath));
+    const codeFiles = [
+      [FACADE_CANDIDATES.find(existsSync) ?? "", "pi-web facade"],
+      [join(nvmRoot, "lib", "node_modules", "@earendil-works/pi-coding-agent", "dist", "core", "agent-session.js"), "pi SDK (tool-registry semantics)"],
+      [join(HOME, ".pi", "agent", "npm", "node_modules", "@99percentpeople/pi-ssh-remote", "index.min.js"), "pi-ssh-remote"],
+    ];
+    for (const [f, what] of codeFiles) {
+      if (!f || !existsSync(f)) continue;
+      const mt = statSync(f).mtimeMs / 1000;
+      if (mt > startSec + 5)
+        warn(`${what} was updated AFTER the daemon started - the running daemon still executes the OLD code. Restart pi-web-sessiond; after a pi/ssh-remote update also run a live remote probe (remote bash write -> edit -> verify on remote)`);
+      else ok(`${what}: on-disk code not newer than daemon start (in-memory copy current)`);
+    }
   }
 }
 
